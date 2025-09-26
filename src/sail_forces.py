@@ -105,33 +105,41 @@ class SailForceCalculator:
 
     def apparent_wind(self, VT: float, beta_deg: float, U_boat: float) -> Tuple[float, float]:
         """
-        Compute apparent wind given true wind and boat speed (boat heading = 0°).
-        beta_deg: true-wind direction measured from bow (starboard positive).
-        U_boat: boat speed (m/s) forward along +x.
-        Returns (Va, gamma_deg) where gamma is apparent-wind angle from bow.
+        beta_deg: true-wind *from* angle measured from bow (starboard positive).
+        Returns Va and gamma_deg, where gamma is the apparent-wind *from* angle.
         """
-        VTx, VTy = self._polar_to_cart(VT, beta_deg)
-        VAx, VAy = (VTx - U_boat, VTy)  # subtract boat velocity [U_boat, 0]
-        Va, gamma = self._cart_to_polar(VAx, VAy)
+        # Unit vector pointing toward the wind *source* ("from" direction)
+        nx, ny = math.cos(math.radians(beta_deg)), math.sin(math.radians(beta_deg))
+        # True wind velocity in Earth frame points opposite the "from" direction
+        VTx, VTy = (-VT * nx, -VT * ny)
+
+        # Boat velocity is +x (forward)
+        VAx, VAy = (VTx - U_boat, VTy)
+
+        # Apparent wind magnitude
+        Va = math.hypot(VAx, VAy)
+
+        # Convert relative-flow vector (VA) into a "from" angle by flipping its sign
+        gamma = math.degrees(math.atan2(-VAy, -VAx))
         return Va, gamma
 
     def forces(self, Va: float, gamma_deg: float, delta_deg: float) -> Dict[str, float]:
         """
-        Forces in boat axes (+x forward, +y to starboard/leeward).
-        gamma_deg: apparent-wind angle from bow; delta_deg: sail trim from centerline.
+        Forces in boat axes (+x forward, +y starboard). gamma_deg is a "from" angle.
         """
         alpha_deg = gamma_deg - delta_deg
         CL = self.cl(alpha_deg)
         CD = self.cd(CL, alpha_deg)
-
         q = 0.5 * self.p.rho * Va * Va
         L = q * self.p.A * CL
         D = q * self.p.A * CD
+        g = math.radians(gamma_deg)
 
-        g = self.deg2rad(gamma_deg)
-        # Lift ⟂ to VA, Drag ∥ to VA; resolve to boat frame
+        # Wind flows FROM gamma_deg, so it goes TO the opposite direction
+        # Drag acts in the flow direction (downwind): (-cos g, -sin g)
+        # Lift acts perpendicular (right-hand rule): (sin g, -cos g)
         T = L * math.sin(g) - D * math.cos(g)   # + forward
-        S = L * math.cos(g) + D * math.sin(g)   # + leeward
+        S = -L * math.cos(g) - D * math.sin(g)  # + starboard
 
         return {"T": T, "S": S, "L": L, "D": D, "alpha_deg": alpha_deg, "CL": CL, "CD": CD, "q": q}
 
