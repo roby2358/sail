@@ -1,44 +1,142 @@
-
-from dataclasses import dataclass
 import math
-from typing import Dict
 import pandas as pd
+from dataclasses import dataclass
+from typing import Dict, Tuple
 
 @dataclass
 class SailParams:
-    rho: float = 1.225
-    A: float = 20.0
-    CD0: float = 0.015
-    k: float = 0.075
-    alpha0_deg: float = -2.0
+    # Geometry & air
+    rho: float = 1.225         # kg/m^3
+    A: float = 20.0            # m^2 (reference area)
+    AR: float = 4.5            # aspect ratio (span^2 / area), rough for a main+jib effective
+    e: float = 0.85            # Oswald efficiency factor
+
+    # Polar / section
+    CD0: float = 0.015         # zero-lift (parasitic) drag
+    alpha0_deg: float = -2.0   # zero-lift AoA (deg)
+
+    # Stall model
+    alpha_stall_deg: float = 15.0  # onset of stall (deg)
+    alpha_max_deg: float = 35.0    # fully separated (deg) where model caps out
+    min_poststall_CL_frac: float = 0.30  # CL fraction retained far past stall
+    CD_surge_max: float = 0.8      # extra CD added at alpha_max
 
 class SailForceCalculator:
     def __init__(self, params: SailParams = SailParams()):
         self.p = params
 
+        # Geometry-driven induced-drag factor k = 1/(pi e AR)
+        self.k = 1.0 / (math.pi * self.p.e * self.p.AR)
+
+        # Finite-wing lift-curve slope (Helmbold-like approx): a = 2π AR / (2 + AR)
+        self.CL_alpha = 2.0 * math.pi * self.p.AR / (2.0 + self.p.AR)  # per rad
+
     @staticmethod
     def deg2rad(deg: float) -> float:
         return math.radians(deg)
 
-    def cl(self, alpha_deg: float) -> float:
-        return 2 * math.pi * self.deg2rad(alpha_deg)
+    @staticmethod
+    def rad2deg(rad: float) -> float:
+        return math.degrees(rad)
 
-    def cd(self, cl: float) -> float:
-        return self.p.CD0 + self.p.k * cl * cl
+    def _stall_blend(self, eff_alpha_deg: float) -> Tuple[float, float]:
+        """
+        Returns (CL_mult, extra_CD) for post-stall handling.
+        - CL_mult smoothly tapers from 1 at stall to min_poststall_CL_frac at alpha_max.
+        - extra_CD rises from 0 at stall to CD_surge_max at alpha_max.
+        """
+        a = abs(eff_alpha_deg)
+        if a <= self.p.alpha_stall_deg:
+            return 1.0, 0.0
+
+        # Normalize beyond stall
+        denom = max(1e-6, self.p.alpha_max_deg - self.p.alpha_stall_deg)
+        x = min(1.0, (a - self.p.alpha_stall_deg) / denom)
+
+        # Smooth ease (cosine) from 1 -> min_CL and 0 -> surge
+        cl_end = self.p.min_poststall_CL_frac
+        CL_mult = cl_end + (1.0 - cl_end) * 0.5 * (1.0 + math.cos(math.pi * x))  # 1 at x=0 -> cl_end at x=1
+        extra_CD = self.p.CD_surge_max * (x ** 2)  # gentle then strong rise
+
+        return CL_mult, extra_CD
+
+    def cl(self, alpha_deg: float) -> float:
+        """
+        Lift coefficient with zero-lift shift, finite-wing slope, and soft post-stall decay.
+        """
+        effective_alpha_deg = alpha_deg - self.p.alpha0_deg
+        alpha_rad = self.deg2rad(effective_alpha_deg)
+
+        cl_linear = self.CL_alpha * alpha_rad
+
+        # Post-stall taper
+        CL_mult, _ = self._stall_blend(effective_alpha_deg)
+        CL = cl_linear * CL_mult
+
+        # Hard cap for pathological angles
+        alpha_cap = self.p.alpha_max_deg * 1.25
+        if abs(effective_alpha_deg) > alpha_cap:
+            CL *= 0.0
+
+        return CL
+
+    def cd(self, CL: float, alpha_deg: float) -> float:
+        """
+        Parabolic polar + post-stall drag surge.
+        """
+        CD = self.p.CD0 + self.k * CL * CL
+
+        effective_alpha_deg = alpha_deg - self.p.alpha0_deg
+        _, extra_CD = self._stall_blend(effective_alpha_deg)
+        CD += extra_CD
+
+        return CD
+
+    @staticmethod
+    def _polar_to_cart(V: float, ang_deg: float) -> Tuple[float, float]:
+        th = math.radians(ang_deg)
+        return (V * math.cos(th), V * math.sin(th))
+
+    @staticmethod
+    def _cart_to_polar(x: float, y: float) -> Tuple[float, float]:
+        V = math.hypot(x, y)
+        ang = math.degrees(math.atan2(y, x))
+        return V, ang
+
+    def apparent_wind(self, VT: float, beta_deg: float, U_boat: float) -> Tuple[float, float]:
+        """
+        Compute apparent wind given true wind and boat speed (boat heading = 0°).
+        beta_deg: true-wind direction measured from bow (starboard positive).
+        U_boat: boat speed (m/s) forward along +x.
+        Returns (Va, gamma_deg) where gamma is apparent-wind angle from bow.
+        """
+        VTx, VTy = self._polar_to_cart(VT, beta_deg)
+        VAx, VAy = (VTx - U_boat, VTy)  # subtract boat velocity [U_boat, 0]
+        Va, gamma = self._cart_to_polar(VAx, VAy)
+        return Va, gamma
 
     def forces(self, Va: float, gamma_deg: float, delta_deg: float) -> Dict[str, float]:
-        alpha_deg = gamma_deg - delta_deg - self.p.alpha0_deg
+        """
+        Forces in boat axes (+x forward, +y to starboard/leeward).
+        gamma_deg: apparent-wind angle from bow; delta_deg: sail trim from centerline.
+        """
+        alpha_deg = gamma_deg - delta_deg
         CL = self.cl(alpha_deg)
-        CD = self.cd(CL)
+        CD = self.cd(CL, alpha_deg)
+
         q = 0.5 * self.p.rho * Va * Va
         L = q * self.p.A * CL
         D = q * self.p.A * CD
-        gamma_rad = self.deg2rad(gamma_deg)
-        T = L * math.sin(gamma_rad) - D * math.cos(gamma_rad)
-        S = L * math.cos(gamma_rad) + D * math.sin(gamma_rad)
+
+        g = self.deg2rad(gamma_deg)
+        # Lift ⟂ to VA, Drag ∥ to VA; resolve to boat frame
+        T = L * math.sin(g) - D * math.cos(g)   # + forward
+        S = L * math.cos(g) + D * math.sin(g)   # + leeward
+
         return {"T": T, "S": S, "L": L, "D": D, "alpha_deg": alpha_deg, "CL": CL, "CD": CD, "q": q}
 
-    def sweep_trim(self, Va: float, gamma_deg: float, delta_min: float = -90.0, delta_max: float = 90.0, step: float = 0.5) -> pd.DataFrame:
+    def sweep_trim(self, Va: float, gamma_deg: float, delta_min: float = -90.0,
+                   delta_max: float = 90.0, step: float = 0.5) -> pd.DataFrame:
         rows = []
         delta = delta_min
         while delta <= delta_max + 1e-12:
@@ -48,6 +146,29 @@ class SailForceCalculator:
             delta += step
         return pd.DataFrame(rows)
 
-    def optimize_trim_for_drive(self, Va: float, gamma_deg: float, delta_min: float = -90.0, delta_max: float = 90.0, step: float = 0.1):
+    def optimize_trim_for_drive(self, Va: float, gamma_deg: float,
+                                delta_min: float = -90.0, delta_max: float = 90.0,
+                                step: float = 0.25) -> Dict[str, float]:
         df = self.sweep_trim(Va, gamma_deg, delta_min, delta_max, step)
         return df.loc[df["T"].idxmax()].to_dict()
+
+    def forces_from_true_wind(self, VT: float, beta_deg: float, U_boat: float, delta_deg: float) -> Dict[str, float]:
+        """
+        Convenience wrapper: pass true wind (speed, angle from bow) + boat speed.
+        """
+        Va, gamma = self.apparent_wind(VT, beta_deg, U_boat)
+        out = self.forces(Va, gamma, delta_deg)
+        out.update({"Va": Va, "gamma_deg": gamma, "VT": VT, "beta_deg": beta_deg, "U_boat": U_boat})
+        return out
+
+if __name__ == "__main__":
+    calc = SailForceCalculator()
+
+    # Example: true wind 10 m/s from 45° off the bow, boat at 5 m/s forward
+    Va, gamma = calc.apparent_wind(VT=10.0, beta_deg=45.0, U_boat=5.0)
+    result = calc.forces(Va=Va, gamma_deg=gamma, delta_deg=20.0)
+    print(f"Apparent wind: Va={Va:.2f} m/s, gamma={gamma:.1f}°")
+    print("Forces:", {k: (f"{v:.1f}" if isinstance(v, float) else v) for k, v in result.items()})
+
+    optimal = calc.optimize_trim_for_drive(Va=Va, gamma_deg=gamma)
+    print(f"Optimal trim: {optimal['delta_deg']:.1f}°, T_max={optimal['T']:.1f} N")
