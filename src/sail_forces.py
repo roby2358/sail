@@ -21,6 +21,38 @@ class SailParams:
     min_poststall_CL_frac: float = 0.30  # CL fraction retained far past stall
     CD_surge_max: float = 0.8      # extra CD added at alpha_max
 
+# Man o' War — Full Press (all plain sail, fair wind, reaching/running bias)
+# SailParams(
+#     rho=1.225,            # sea-level standard; 1.20–1.25 covers warm/cool marine air
+#     A=3800.0,             # m^2 effective projected area (≈ 0.7–0.8 of ~5000–5500 m^2 total canvas)
+#     AR=1.6,               # low aspect ratio for stacked square sails
+#     e=0.65,               # Oswald efficiency knocked down by mast/yard losses & interference
+#
+#     CD0=0.055,            # hull + rigging windage baked into the polar
+#     alpha0_deg=+0.5,      # square canvas doesn’t make lift at tiny α like a foil
+#
+#     alpha_stall_deg=12.0, # stalls early when pinching
+#     alpha_max_deg=65.0,   # but stays “parachute-useful” far past stall
+#     min_poststall_CL_frac=0.20,
+#     CD_surge_max=1.35     # strong drag rise when squared off — downwind is drag-driven
+# )
+
+# Man o' War — Battle Sails (reefed/shortened sail, closer to weather, less showy)
+# SailParams(
+#     rho=1.225,
+#     A=2200.0,             # reduced effective area for topsails/fore-and-main only
+#     AR=1.4,               # slightly “stubbier” with less aloft
+#     e=0.58,               # more interference and leakage when canvas is cut down
+#
+#     CD0=0.060,            # proportionally more parasitic drag (rigging dominates)
+#     alpha0_deg=+0.5,
+#
+#     alpha_stall_deg=10.0, # earlier stall reflects poor upwind bite
+#     alpha_max_deg=60.0,
+#     min_poststall_CL_frac=0.18,
+#     CD_surge_max=1.25
+# )
+
 class SailForceCalculator:
     def __init__(self, params: SailParams = SailParams()):
         self.p = params
