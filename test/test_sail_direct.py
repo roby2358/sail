@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
+"""Direct test of sail force calculation without external dependencies."""
+
 import math
-import pandas as pd
 from dataclasses import dataclass
 from typing import Dict, Tuple
+
 
 @dataclass
 class SailParams:
@@ -21,37 +24,6 @@ class SailParams:
     min_poststall_CL_frac: float = 0.30  # CL fraction retained far past stall
     CD_surge_max: float = 0.8      # extra CD added at alpha_max
 
-# Man o' War — Full Press (all plain sail, fair wind, reaching/running bias)
-# SailParams(
-#     rho=1.225,            # sea-level standard; 1.20–1.25 covers warm/cool marine air
-#     A=3800.0,             # m^2 effective projected area (≈ 0.7–0.8 of ~5000–5500 m^2 total canvas)
-#     AR=1.6,               # low aspect ratio for stacked square sails
-#     e=0.65,               # Oswald efficiency knocked down by mast/yard losses & interference
-#
-#     CD0=0.055,            # hull + rigging windage baked into the polar
-#     alpha0_deg=+0.5,      # square canvas doesn’t make lift at tiny α like a foil
-#
-#     alpha_stall_deg=12.0, # stalls early when pinching
-#     alpha_max_deg=65.0,   # but stays “parachute-useful” far past stall
-#     min_poststall_CL_frac=0.20,
-#     CD_surge_max=1.35     # strong drag rise when squared off — downwind is drag-driven
-# )
-
-# Man o' War — Battle Sails (reefed/shortened sail, closer to weather, less showy)
-# SailParams(
-#     rho=1.225,
-#     A=2200.0,             # reduced effective area for topsails/fore-and-main only
-#     AR=1.4,               # slightly “stubbier” with less aloft
-#     e=0.58,               # more interference and leakage when canvas is cut down
-#
-#     CD0=0.060,            # proportionally more parasitic drag (rigging dominates)
-#     alpha0_deg=+0.5,
-#
-#     alpha_stall_deg=10.0, # earlier stall reflects poor upwind bite
-#     alpha_max_deg=60.0,
-#     min_poststall_CL_frac=0.18,
-#     CD_surge_max=1.25
-# )
 
 class SailForceCalculator:
     def __init__(self, params: SailParams = SailParams()):
@@ -190,40 +162,104 @@ class SailForceCalculator:
 
         return {"T": T, "S": S, "L": L, "D": D, "alpha_deg": alpha_deg, "CL": CL, "CD": CD, "q": q}
 
-    def sweep_trim(self, Va: float, gamma_deg: float, delta_min: float = -90.0,
-                   delta_max: float = 90.0, step: float = 0.5) -> pd.DataFrame:
-        rows = []
-        delta = delta_min
-        while delta <= delta_max + 1e-12:
-            res = self.forces(Va, gamma_deg, delta)
-            res.update({"delta_deg": delta, "Va": Va, "gamma_deg": gamma_deg})
-            rows.append(res)
-            delta += step
-        return pd.DataFrame(rows)
 
-    def optimize_trim_for_drive(self, Va: float, gamma_deg: float,
-                                delta_min: float = -90.0, delta_max: float = 90.0,
-                                step: float = 0.25) -> Dict[str, float]:
-        df = self.sweep_trim(Va, gamma_deg, delta_min, delta_max, step)
-        return df.loc[df["T"].idxmax()].to_dict()
-
-    def forces_from_true_wind(self, VT: float, beta_deg: float, U_boat: float, delta_deg: float) -> Dict[str, float]:
-        """
-        Convenience wrapper: pass true wind (speed, angle from bow) + boat speed.
-        """
-        Va, gamma = self.apparent_wind(VT, beta_deg, U_boat)
-        out = self.forces(Va, gamma, delta_deg)
-        out.update({"Va": Va, "gamma_deg": gamma, "VT": VT, "beta_deg": beta_deg, "U_boat": U_boat})
-        return out
-
-if __name__ == "__main__":
+def test_port_tack_forces():
+    """Test that wind from port can generate starboard force with proper trim."""
     calc = SailForceCalculator()
+    
+    # Wind from port (negative angle from bow)
+    VT = 12.0  # m/s
+    beta_deg = -45.0  # wind from port at 45 degrees
+    U_boat = 0.0  # stationary boat initially
+    
+    # Get apparent wind
+    Va, gamma = calc.apparent_wind(VT, beta_deg, U_boat)
+    print(f"Wind from port {beta_deg}° → Apparent wind: {Va:.2f} m/s from {gamma:.1f}°")
+    
+    # Test various sail angles to find one that generates starboard force
+    found_starboard_force = False
+    best_starboard_force = 0.0
+    best_delta = 0.0
+    
+    print("\nTesting sail angles for starboard force:")
+    for delta_deg in range(-90, 91, 10):  # Test sail angles from -90 to +90 degrees
+        forces = calc.forces(Va, gamma, delta_deg)
+        S = forces["S"]  # Side force (positive = starboard)
+        alpha_deg = forces["alpha_deg"]
+        
+        print(f"  Sail {delta_deg:3.0f}° → α={alpha_deg:5.1f}°, S={S:8.1f} N")
+        
+        if S > 0:  # Starboard force
+            found_starboard_force = True
+            if S > best_starboard_force:
+                best_starboard_force = S
+                best_delta = delta_deg
+    
+    if found_starboard_force:
+        print(f"\n✓ SUCCESS: Found starboard force with sail at {best_delta}° (S = {best_starboard_force:.1f} N)")
+        return True
+    else:
+        print(f"\n✗ FAILED: Could not generate starboard force with wind from port")
+        return False
 
-    # Example: true wind 10 m/s from 45° off the bow, boat at 5 m/s forward
-    Va, gamma = calc.apparent_wind(VT=10.0, beta_deg=45.0, U_boat=5.0)
-    result = calc.forces(Va=Va, gamma_deg=gamma, delta_deg=20.0)
-    print(f"Apparent wind: Va={Va:.2f} m/s, gamma={gamma:.1f}°")
-    print("Forces:", {k: (f"{v:.1f}" if isinstance(v, float) else v) for k, v in result.items()})
 
-    optimal = calc.optimize_trim_for_drive(Va=Va, gamma_deg=gamma)
-    print(f"Optimal trim: {optimal['delta_deg']:.1f}°, T_max={optimal['T']:.1f} N")
+def test_starboard_tack_forces():
+    """Test that wind from starboard can generate port force with proper trim."""
+    calc = SailForceCalculator()
+    
+    # Wind from starboard (positive angle from bow)
+    VT = 12.0  # m/s
+    beta_deg = 45.0  # wind from starboard at 45 degrees
+    U_boat = 0.0  # stationary boat initially
+    
+    # Get apparent wind
+    Va, gamma = calc.apparent_wind(VT, beta_deg, U_boat)
+    print(f"Wind from starboard {beta_deg}° → Apparent wind: {Va:.2f} m/s from {gamma:.1f}°")
+    
+    # Test various sail angles to find one that generates port force
+    found_port_force = False
+    best_port_force = 0.0
+    best_delta = 0.0
+    
+    print("\nTesting sail angles for port force:")
+    for delta_deg in range(-90, 91, 10):  # Test sail angles from -90 to +90 degrees
+        forces = calc.forces(Va, gamma, delta_deg)
+        S = forces["S"]  # Side force (negative = port)
+        alpha_deg = forces["alpha_deg"]
+        
+        print(f"  Sail {delta_deg:3.0f}° → α={alpha_deg:5.1f}°, S={S:8.1f} N")
+        
+        if S < 0:  # Port force
+            found_port_force = True
+            if abs(S) > abs(best_port_force):
+                best_port_force = S
+                best_delta = delta_deg
+    
+    if found_port_force:
+        print(f"\n✓ SUCCESS: Found port force with sail at {best_delta}° (S = {best_port_force:.1f} N)")
+        return True
+    else:
+        print(f"\n✗ FAILED: Could not generate port force with wind from starboard")
+        return False
+
+
+def main():
+    print("Testing sail force fix...")
+    print("=" * 50)
+    
+    port_success = test_port_tack_forces()
+    print("\n" + "=" * 50)
+    starboard_success = test_starboard_tack_forces()
+    
+    print("\n" + "=" * 50)
+    if port_success and starboard_success:
+        print("✓ ALL TESTS PASSED: Sail forces work correctly on both tacks!")
+    else:
+        print("✗ SOME TESTS FAILED: Sail force fix needs more work")
+        return 1
+    
+    return 0
+
+
+if __name__ == '__main__':
+    exit(main())

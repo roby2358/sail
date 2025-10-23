@@ -87,10 +87,23 @@ class SailForceCalculator:
         L = q * self.p.A * CL
         D = q * self.p.A * CD
         g = math.radians(gamma_from_deg)
-        # Drag along (cos g, sin g) as FROM direction → force on boat is toward the FROM: (+cos g, +sin g)
-        # Using established decomposition (see discussion):
-        T = L * math.sin(g) - D * math.cos(g)   # + forward
-        S = -L * math.cos(g) - D * math.sin(g)  # + starboard
+        alpha_rad = math.radians(alpha_deg)
+        
+        # Lift direction depends on angle of attack:
+        # - Positive alpha (wind from starboard) creates lift to starboard
+        # - Negative alpha (wind from port) creates lift to port
+        lift_sign = 1.0 if alpha_rad >= 0 else -1.0
+        
+        # Lift force components: perpendicular to wind direction
+        lift_x = lift_sign * L * math.sin(g)  # lift component in x (forward/aft)
+        lift_y = -lift_sign * L * math.cos(g)  # lift component in y (starboard/port)
+        
+        # Drag force components: along wind direction
+        drag_x = -D * math.cos(g)  # drag component in x
+        drag_y = -D * math.sin(g)  # drag component in y
+        
+        T = lift_x + drag_x   # + forward
+        S = lift_y + drag_y   # + starboard
         return {"T": T, "S": S, "L": L, "D": D, "alpha_deg": alpha_deg, "CL": CL, "CD": CD, "q": q}
 
 
@@ -105,7 +118,7 @@ class ShipParams:
     surge_damp: float = 6.0e4  # N·(m/s) for forward velocity
     yaw_damp: float = 4.0e7    # N·m per rad/s
     lever_S: float = 4.0       # m: side-force lever arm creating yaw
-    rudder_N_per_rad: float = 6.0e7  # N·m per rad rudder effectiveness
+    rudder_N_per_rad: float = 1.2e8  # N·m per rad rudder effectiveness
     max_rudder_deg: float = 35.0
 
 
@@ -357,6 +370,7 @@ def main():
             f"Sail δ: {ship.delta_sail_deg:5.1f}°   Rudder: {ship.delta_rudder_deg:5.1f}°",
             f"Va: {Va:5.2f} m/s   γ_app FROM: {gamma:5.1f}°   α: {aero.get('alpha_deg',0):5.1f}°",
             f"T: {aero.get('T',0):8.0f} N   S: {aero.get('S',0):8.0f} N   L: {aero.get('L',0):8.0f} N   D: {aero.get('D',0):8.0f} N",
+            f"Rudder: {ship.delta_rudder_deg:5.1f}°  Yaw rate: {ship.r:6.3f} rad/s  Heading: {math.degrees(ship.psi):6.1f}°",
             f"Distance to buoy: {distance_to_buoy:5.1f} pixels  |  Capture: {buoy_capture_distance} pixels  |  Captures: {buoy_captures}",
             "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  Z/X: wind speed  |  C/V: wind dir  |  SPACE: pause  |  R: reset  |  T: move buoy",
             "Tacking: Sail at 45° to wind, trim sails (Q/E), use rudder to zigzag upwind"
