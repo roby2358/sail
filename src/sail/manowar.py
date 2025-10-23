@@ -153,8 +153,8 @@ class Ship:
         c, s = math.cos(self.psi), math.sin(self.psi)
         Vx = c * self.u - s * self.v
         Vy = s * self.u + c * self.v
-        self.x += Vx * dt
-        self.y += Vy * dt
+        self.x += Vx * dt * 4.0  # Quadruple the distance travelled
+        self.y += Vy * dt * 4.0  # Quadruple the distance travelled
         self.psi += self.r * dt
 
         # Keep heading wrapped
@@ -164,6 +164,27 @@ class Ship:
             self.psi += 2 * math.pi
 
         return aero, Va, gamma_from_deg
+
+    def optimize_sail_for_close_hauled(self, VT: float, wind_from_global_deg: float) -> float:
+        """
+        Optimize sail angle for close-hauled sailing (upwind performance).
+        Returns the optimal sail angle for maximum forward thrust.
+        """
+        boat_from_wind_deg = wrap_deg(wind_from_global_deg - math.degrees(self.psi))
+        Va, gamma_from_deg = self.sc.apparent_wind(VT, boat_from_wind_deg, self.u)
+        
+        best_thrust = -float('inf')
+        best_sail_angle = 0.0
+        
+        # Test sail angles in realistic close-hauled range
+        for sail_angle in range(-60, 61, 5):  # -60 to +60 degrees in 5-degree steps
+            forces = self.sc.forces(Va, gamma_from_deg, sail_angle)
+            if forces["T"] > best_thrust:
+                best_thrust = forces["T"]
+                best_sail_angle = sail_angle
+        
+        return best_sail_angle
+
 
 
 # -----------------------------
@@ -256,6 +277,10 @@ def main():
                     calc.p = params_full; calc.__init__(calc.p); using_battle = False
                 if e.key == pygame.K_2:
                     calc.p = params_battle; calc.__init__(calc.p); using_battle = True
+                if e.key == pygame.K_o:
+                    # Optimize sail for close-hauled sailing
+                    optimal_sail = ship.optimize_sail_for_close_hauled(VT, wind_from_global_deg)
+                    ship.delta_sail_deg = optimal_sail
 
         keys = pygame.key.get_pressed()
         # Rudder
@@ -267,17 +292,17 @@ def main():
             # auto-center rudder
             ship.delta_rudder_deg *= (1.0 - min(1.0, 3.0 * dt))
 
-        # Sail trim - cycle around instead of stopping at limits
+        # Sail trim - realistic close-hauled sailing
         if keys[pygame.K_q]:
             ship.delta_sail_deg -= 30.0 * dt
-            # Wrap around when going below -85 degrees
-            if ship.delta_sail_deg < -85.0:
-                ship.delta_sail_deg = 85.0
+            # Limit to realistic close-hauled range for upwind sailing
+            if ship.delta_sail_deg < -60.0:
+                ship.delta_sail_deg = -60.0
         if keys[pygame.K_e]:
             ship.delta_sail_deg += 30.0 * dt
-            # Wrap around when going above 85 degrees
-            if ship.delta_sail_deg > 85.0:
-                ship.delta_sail_deg = -85.0
+            # Limit to realistic close-hauled range for upwind sailing
+            if ship.delta_sail_deg > 60.0:
+                ship.delta_sail_deg = 60.0
 
         # Wind controls
         if keys[pygame.K_x]:
@@ -362,8 +387,8 @@ def main():
             f"T: {aero.get('T',0):8.0f} N   S: {aero.get('S',0):8.0f} N   L: {aero.get('L',0):8.0f} N   D: {aero.get('D',0):8.0f} N",
             f"Rudder: {ship.delta_rudder_deg:5.1f}°  Yaw rate: {ship.r:6.3f} rad/s  Heading: {math.degrees(ship.psi):6.1f}°",
             f"Distance to buoy: {distance_to_buoy:5.1f} pixels  |  Capture: {buoy_capture_distance} pixels  |  Captures: {buoy_captures}",
-            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  X: wind speed+  |  Z/C: wind dir −/+  |  SPACE: pause  |  R: reset  |  T: move buoy",
-            "Tacking: Sail at 45° to wind, trim sails (Q/E), use rudder to zigzag upwind"
+            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  X: wind speed+  |  Z/C: wind dir −/+  |  SPACE: pause  |  R: reset  |  T: move buoy  |  O: optimize sail",
+            "Tacking: Sail at 45-60° to wind, trim sails (Q/E) for close-hauled sailing, use rudder to zigzag upwind"
         ]
         for i, txt in enumerate(lines):
             surf = font.render(txt, True, WHITE)

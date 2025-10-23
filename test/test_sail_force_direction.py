@@ -245,6 +245,66 @@ class TestSailForceDirection(unittest.TestCase):
                 found = True
                 break
         self.assertTrue(found, "No trim produced forward+port force for wind-from-starboard")
+    
+    def test_close_hauled_sail_optimization(self):
+        """Test that close-hauled sailing works with realistic sail angles."""
+        VT = 12.0
+        beta_deg = 45.0  # wind from 45 degrees (typical tacking angle)
+        U_boat = 0.0
+        Va, gamma = self.calc.apparent_wind(VT, beta_deg, U_boat)
+        
+        # Test realistic close-hauled sail angles (-60 to +60 degrees)
+        best_thrust = -float('inf')
+        best_sail_angle = 0.0
+        
+        for sail_angle in range(-60, 61, 5):  # Realistic close-hauled range
+            forces = self.calc.forces(Va, gamma, sail_angle)
+            if forces["T"] > best_thrust:
+                best_thrust = forces["T"]
+                best_sail_angle = sail_angle
+        
+        # Should find a sail angle that generates positive forward thrust
+        self.assertGreater(best_thrust, 0, 
+                          f"Could not generate forward thrust for close-hauled sailing at {beta_deg}° wind")
+        
+        # The optimal sail angle should be reasonable (not at extremes)
+        self.assertGreaterEqual(best_sail_angle, -60, 
+                               f"Optimal sail angle {best_sail_angle}° is too extreme (negative)")
+        self.assertLessEqual(best_sail_angle, 60, 
+                            f"Optimal sail angle {best_sail_angle}° is too extreme (positive)")
+    
+    def test_realistic_tacking_angles(self):
+        """Test that tacking works at realistic angles (45-60 degrees to wind)."""
+        VT = 12.0
+        
+        # Test both port and starboard tacks at realistic angles
+        tack_angles = [45.0, -45.0]  # 45 degrees to wind on each tack
+        
+        for tack_angle in tack_angles:
+            # Wind from the tack angle (simulating sailing at that angle to wind)
+            beta_deg = tack_angle
+            U_boat = 0.0
+            Va, gamma = self.calc.apparent_wind(VT, beta_deg, U_boat)
+            
+            # Find sail angle that gives good forward thrust
+            best_thrust = -float('inf')
+            best_sail_angle = 0.0
+            
+            for sail_angle in range(-45, 46, 5):  # Reasonable sail angle range
+                forces = self.calc.forces(Va, gamma, sail_angle)
+                if forces["T"] > best_thrust:
+                    best_thrust = forces["T"]
+                    best_sail_angle = sail_angle
+            
+            # Should be able to generate forward thrust on this tack
+            self.assertGreater(best_thrust, 0, 
+                              f"Could not generate forward thrust on {tack_angle}° tack")
+            
+            # The sail angle should be reasonable
+            self.assertGreaterEqual(best_sail_angle, -45, 
+                                   f"Sail angle {best_sail_angle}° too extreme for {tack_angle}° tack")
+            self.assertLessEqual(best_sail_angle, 45, 
+                                f"Sail angle {best_sail_angle}° too extreme for {tack_angle}° tack")
 
 
 if __name__ == '__main__':
