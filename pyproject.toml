@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "sail"
 version = "0.1.0"
-description = "Sail force simulation and ship dynamics"
+description = "Sail force simulation and ship dynamics for square-rigged vessels"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -22,11 +22,11 @@ dev = [
     "mypy>=0.900",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.scripts]
+manowar = "sail.manowar:main"
 
-[tool.setuptools.package-dir]
-"" = "src"
+[tool.hatch.build.targets.wheel]
+packages = ["src/sail"]
 
 [tool.black]
 line-length = 88

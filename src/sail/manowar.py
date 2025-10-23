@@ -10,7 +10,7 @@ from typing import Dict, Tuple
 class SailParams:
     # Geometry & air
     rho: float = 1.225         # kg/m^3
-    A: float = 3800.0          # m^2 effective projected area (Full Press default)
+    A: float = 1900.0          # m^2 effective projected area (Full Press default)
     AR: float = 1.6            # aspect ratio (span^2 / area)
     e: float = 0.65            # Oswald efficiency factor
 
@@ -99,14 +99,14 @@ class SailForceCalculator:
 # -----------------------------
 @dataclass
 class ShipParams:
-    mass: float = 350000.0     # kg (ballpark for a 1st rate fully loaded)
-    Iz: float = 1.2e8          # yaw inertia kg·m^2 (very rough)
-    sway_damp: float = 4.0e5   # N·(m/s) for lateral velocity
-    surge_damp: float = 1.2e5  # N·(m/s) for forward velocity
-    yaw_damp: float = 8.0e7    # N·m per rad/s
-    lever_S: float = 8.0       # m: side-force lever arm creating yaw
-    rudder_N_per_rad: float = 3.0e6  # N·m per rad rudder effectiveness
-    max_rudder_deg: float = 25.0
+    mass: float = 175000.0     # kg (ballpark for a 1st rate fully loaded)
+    Iz: float = 6.0e6          # yaw inertia kg·m^2 (very rough)
+    sway_damp: float = 2.0e5   # N·(m/s) for lateral velocity
+    surge_damp: float = 6.0e4  # N·(m/s) for forward velocity
+    yaw_damp: float = 4.0e7    # N·m per rad/s
+    lever_S: float = 4.0       # m: side-force lever arm creating yaw
+    rudder_N_per_rad: float = 6.0e7  # N·m per rad rudder effectiveness
+    max_rudder_deg: float = 35.0
 
 
 class Ship:
@@ -185,8 +185,10 @@ BG = (12, 18, 28)
 WHITE = (230, 230, 230)
 CYAN = (90, 200, 220)
 GREEN = (120, 200, 120)
+DARK_GREEN = (60, 120, 60)
 RED = (230, 100, 100)
 YELLOW = (240, 220, 120)
+ORANGE = (255, 165, 0)
 
 
 def draw_arrow(surf, x, y, ang_deg, length, color, width=2):
@@ -209,7 +211,7 @@ def main():
     font = pygame.font.SysFont("consolas", 18)
 
     params_full = SailParams()
-    params_battle = SailParams(A=2200.0, AR=1.4, e=0.58, CD0=0.060,
+    params_battle = SailParams(A=1100.0, AR=1.4, e=0.58, CD0=0.060,
                                alpha_stall_deg=10.0, alpha_max_deg=60.0,
                                min_poststall_CL_frac=0.18, CD_surge_max=1.25)
 
@@ -219,6 +221,14 @@ def main():
     # Environment
     wind_from_global_deg = 45.0  # FROM angle in world frame
     VT = 12.0  # m/s
+
+    # Destination buoy
+    import random
+    buoy_x = random.randint(100, WIDTH - 100)
+    buoy_y = random.randint(100, HEIGHT - 100)
+    buoy_radius = 30
+    buoy_capture_distance = 80
+    buoy_captures = 0
 
     paused = False
     using_battle = False
@@ -236,6 +246,13 @@ def main():
                     paused = not paused
                 if e.key == pygame.K_r:
                     ship.__init__(calc)  # reset
+                if e.key == pygame.K_RETURN:
+                    ship.x = WIDTH // 2
+                    ship.y = HEIGHT // 2
+                if e.key == pygame.K_t:
+                    # Move buoy to new random location
+                    buoy_x = random.randint(100, WIDTH - 100)
+                    buoy_y = random.randint(100, HEIGHT - 100)
                 if e.key == pygame.K_1:
                     calc.p = params_full; calc.__init__(calc.p); using_battle = False
                 if e.key == pygame.K_2:
@@ -269,6 +286,14 @@ def main():
 
         if not paused:
             aero, Va, gamma = ship.step(dt, VT, wind_from_global_deg)
+            
+            # Check if ship reached the buoy
+            distance_to_buoy = math.hypot(ship.x - buoy_x, ship.y - buoy_y)
+            if distance_to_buoy < buoy_capture_distance:
+                # Move buoy to new random location
+                buoy_x = random.randint(100, WIDTH - 100)
+                buoy_y = random.randint(100, HEIGHT - 100)
+                buoy_captures += 1
         else:
             aero, Va, gamma = {"T":0,"S":0,"L":0,"D":0,"alpha_deg":0,"CL":0,"CD":0,"q":0}, 0, 0
 
@@ -281,9 +306,15 @@ def main():
         pygame.draw.circle(screen, WHITE, (60, 60), 4)
         pygame.draw.circle(screen, WHITE, (60, 120), 4)
 
+        # Draw destination buoy
+        pygame.draw.circle(screen, ORANGE, (int(buoy_x), int(buoy_y)), buoy_radius)
+        pygame.draw.circle(screen, WHITE, (int(buoy_x), int(buoy_y)), buoy_radius, 3)
+        # Draw capture zone (dashed circle)
+        pygame.draw.circle(screen, (255, 255, 255, 100), (int(buoy_x), int(buoy_y)), buoy_capture_distance, 2)
+        
         # Draw ship (triangle)
-        ship_len = 80
-        ship_wid = 26
+        ship_len = 40
+        ship_wid = 13
         c, s = math.cos(ship.psi), math.sin(ship.psi)
         p1 = (ship.x + c * ship_len * 0.6,               ship.y + s * ship_len * 0.6)
         p2 = (ship.x - c * ship_len * 0.4 - s * ship_wid, ship.y - s * ship_len * 0.4 + c * ship_wid)
@@ -292,7 +323,7 @@ def main():
 
         # Draw yards as a line across the mast, orientation = ship heading + delta_sail
         yard_ang = ship.psi + math.radians(ship.delta_sail_deg)
-        ylen = 70
+        ylen = 35
         x1 = ship.x - math.cos(yard_ang) * ylen
         y1 = ship.y - math.sin(yard_ang) * ylen
         x2 = ship.x + math.cos(yard_ang) * ylen
@@ -300,14 +331,23 @@ def main():
         pygame.draw.line(screen, (210, 210, 230), (x1, y1), (x2, y2), 4)
 
         # Force vectors in body axes mapped to world frame at ship position
-        scale = 0.0006  # pixels per Newton for drawing
+        scale = 0.0012  # pixels per Newton for drawing
         # Forward (x) and starboard (y) forces to world axes
         Fx_body, Fy_body = aero.get("T", 0.0), aero.get("S", 0.0)
         Fxw = math.cos(ship.psi) * Fx_body - math.sin(ship.psi) * Fy_body
         Cyw = math.sin(ship.psi) * Fx_body + math.cos(ship.psi) * Fy_body
         draw_arrow(screen, ship.x, ship.y, math.degrees(math.atan2(Cyw, Fxw)), scale * math.hypot(Fxw, Cyw), GREEN, 3)
+        
+        # Momentum arrow (dark green) - shows ship's velocity vector
+        if abs(ship.u) > 1e-6 or abs(ship.v) > 1e-6:
+            momentum_mag = math.hypot(ship.u, ship.v)
+            momentum_ang = math.degrees(math.atan2(ship.v, ship.u))
+            momentum_scale = 40.0  # pixels per m/s for drawing
+            # Reverse the angle to show where the ship is going (not where it came from)
+            draw_arrow(screen, ship.x, ship.y, momentum_ang + 180, momentum_scale * momentum_mag, DARK_GREEN, 2)
 
         # HUD
+        distance_to_buoy = math.hypot(ship.x - buoy_x, ship.y - buoy_y)
         lines = [
             f"Preset: {'Battle Sails' if using_battle else 'Full Press'} (1/2 to toggle)",
             f"Wind FROM: {wind_from_global_deg:5.1f}°  |  VT: {VT:4.1f} m/s",
@@ -315,7 +355,8 @@ def main():
             f"Sail δ: {ship.delta_sail_deg:5.1f}°   Rudder: {ship.delta_rudder_deg:5.1f}°",
             f"Va: {Va:5.2f} m/s   γ_app FROM: {gamma:5.1f}°   α: {aero.get('alpha_deg',0):5.1f}°",
             f"T: {aero.get('T',0):8.0f} N   S: {aero.get('S',0):8.0f} N   L: {aero.get('L',0):8.0f} N   D: {aero.get('D',0):8.0f} N",
-            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  Z/X: wind speed  |  C/V: wind dir  |  SPACE: pause  |  R: reset"
+            f"Distance to buoy: {distance_to_buoy:5.1f} pixels  |  Capture: {buoy_capture_distance} pixels  |  Captures: {buoy_captures}",
+            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  Z/X: wind speed  |  C/V: wind dir  |  SPACE: pause  |  R: reset  |  T: move buoy"
         ]
         for i, txt in enumerate(lines):
             surf = font.render(txt, True, WHITE)
