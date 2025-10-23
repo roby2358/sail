@@ -1,5 +1,8 @@
 import math
-import pandas as pd
+try:
+    import pandas as pd  # optional; only needed for sweep/optimize helpers
+except Exception:  # pragma: no cover - optional dependency
+    pd = None
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
@@ -167,31 +170,19 @@ class SailForceCalculator:
         D = q * self.p.A * CD
         g = math.radians(gamma_deg)
 
-        # Wind flows FROM gamma_deg, so it goes TO the opposite direction
-        # Drag acts in the flow direction (downwind): (-cos g, -sin g)
-        # Lift acts perpendicular to the flow direction
-        # The lift direction depends on the angle of attack:
-        # - Positive alpha (wind from starboard) creates lift to starboard
-        # - Negative alpha (wind from port) creates lift to port
-        alpha_rad = math.radians(alpha_deg)
-        lift_sign = 1.0 if alpha_rad >= 0 else -1.0
-        
-        # Lift force components: perpendicular to wind direction
-        # For wind FROM gamma_deg, lift is perpendicular in the direction determined by alpha
-        lift_x = lift_sign * L * math.sin(g)  # lift component in x (forward/aft)
-        lift_y = -lift_sign * L * math.cos(g)  # lift component in y (starboard/port)
-        
-        # Drag force components: along wind direction
-        drag_x = -D * math.cos(g)  # drag component in x
-        drag_y = -D * math.sin(g)  # drag component in y
-        
-        T = lift_x + drag_x   # + forward
-        S = lift_y + drag_y   # + starboard
+        # Wind flows FROM gamma_deg, so the relative flow is TO (-cos g, -sin g)
+        # Drag acts along the flow direction: (-cos g, -sin g)
+        # Lift is +90° from the flow: (sin g, -cos g)
+        # The sign of CL (hence L) already encodes the side (from α), so don't flip again.
+        T = L * math.sin(g) - D * math.cos(g)
+        S = -L * math.cos(g) - D * math.sin(g)
 
         return {"T": T, "S": S, "L": L, "D": D, "alpha_deg": alpha_deg, "CL": CL, "CD": CD, "q": q}
 
     def sweep_trim(self, Va: float, gamma_deg: float, delta_min: float = -90.0,
-                   delta_max: float = 90.0, step: float = 0.5) -> pd.DataFrame:
+                   delta_max: float = 90.0, step: float = 0.5):
+        if pd is None:
+            raise ImportError("pandas is required for sweep_trim; install pandas or skip this helper")
         rows = []
         delta = delta_min
         while delta <= delta_max + 1e-12:
@@ -204,6 +195,8 @@ class SailForceCalculator:
     def optimize_trim_for_drive(self, Va: float, gamma_deg: float,
                                 delta_min: float = -90.0, delta_max: float = 90.0,
                                 step: float = 0.25) -> Dict[str, float]:
+        if pd is None:
+            raise ImportError("pandas is required for optimize_trim_for_drive; install pandas or skip this helper")
         df = self.sweep_trim(Va, gamma_deg, delta_min, delta_max, step)
         return df.loc[df["T"].idxmax()].to_dict()
 
