@@ -225,8 +225,8 @@ def main():
     import random
     buoy_x = random.randint(100, WIDTH - 100)
     buoy_y = random.randint(100, HEIGHT - 100)
-    buoy_radius = 30
-    buoy_capture_distance = 80
+    buoy_radius = 7.5
+    buoy_capture_distance = 20
     buoy_captures = 0
 
     paused = False
@@ -267,11 +267,17 @@ def main():
             # auto-center rudder
             ship.delta_rudder_deg *= (1.0 - min(1.0, 3.0 * dt))
 
-        # Sail trim
+        # Sail trim - cycle around instead of stopping at limits
         if keys[pygame.K_q]:
-            ship.delta_sail_deg = max(-85.0, ship.delta_sail_deg - 30.0 * dt)
+            ship.delta_sail_deg -= 30.0 * dt
+            # Wrap around when going below -85 degrees
+            if ship.delta_sail_deg < -85.0:
+                ship.delta_sail_deg = 85.0
         if keys[pygame.K_e]:
-            ship.delta_sail_deg = min(85.0, ship.delta_sail_deg + 30.0 * dt)
+            ship.delta_sail_deg += 30.0 * dt
+            # Wrap around when going above 85 degrees
+            if ship.delta_sail_deg > 85.0:
+                ship.delta_sail_deg = -85.0
 
         # Wind controls
         if keys[pygame.K_x]:
