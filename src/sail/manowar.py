@@ -11,12 +11,12 @@ class SailParams:
     # Geometry & air
     rho: float = 1.225         # kg/m^3
     A: float = 1900.0          # m^2 effective projected area (Full Press default)
-    AR: float = 1.6            # aspect ratio (span^2 / area)
-    e: float = 0.65            # Oswald efficiency factor
+    AR: float = 3.0            # aspect ratio (span^2 / area) - higher for better lift
+    e: float = 0.75            # Oswald efficiency factor - higher for better performance
 
     # Polar / section
-    CD0: float = 0.055         # zero-lift (parasitic) drag (rigging + hull windage baked in)
-    alpha0_deg: float = +0.5   # zero-lift AoA (deg)
+    CD0: float = 0.030         # zero-lift (parasitic) drag (rigging + hull windage baked in)
+    alpha0_deg: float = -1.0   # zero-lift AoA (deg) - negative for better upwind
 
     # Stall model
     alpha_stall_deg: float = 12.0  # onset of stall (deg)
@@ -211,7 +211,7 @@ def main():
     font = pygame.font.SysFont("consolas", 18)
 
     params_full = SailParams()
-    params_battle = SailParams(A=1100.0, AR=1.4, e=0.58, CD0=0.060,
+    params_battle = SailParams(A=1100.0, AR=2.5, e=0.70, CD0=0.035,
                                alpha_stall_deg=10.0, alpha_max_deg=60.0,
                                min_poststall_CL_frac=0.18, CD_surge_max=1.25)
 
@@ -356,7 +356,8 @@ def main():
             f"Va: {Va:5.2f} m/s   γ_app FROM: {gamma:5.1f}°   α: {aero.get('alpha_deg',0):5.1f}°",
             f"T: {aero.get('T',0):8.0f} N   S: {aero.get('S',0):8.0f} N   L: {aero.get('L',0):8.0f} N   D: {aero.get('D',0):8.0f} N",
             f"Distance to buoy: {distance_to_buoy:5.1f} pixels  |  Capture: {buoy_capture_distance} pixels  |  Captures: {buoy_captures}",
-            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  Z/X: wind speed  |  C/V: wind dir  |  SPACE: pause  |  R: reset  |  T: move buoy"
+            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  Z/X: wind speed  |  C/V: wind dir  |  SPACE: pause  |  R: reset  |  T: move buoy",
+            "Tacking: Sail at 45° to wind, trim sails (Q/E), use rudder to zigzag upwind"
         ]
         for i, txt in enumerate(lines):
             surf = font.render(txt, True, WHITE)
