@@ -313,8 +313,8 @@ def main():
         pygame.draw.circle(screen, (255, 255, 255, 100), (int(buoy_x), int(buoy_y)), buoy_capture_distance, 2)
         
         # Draw ship (triangle)
-        ship_len = 40
-        ship_wid = 13
+        ship_len = 20
+        ship_wid = 6.5
         c, s = math.cos(ship.psi), math.sin(ship.psi)
         p1 = (ship.x + c * ship_len * 0.6,               ship.y + s * ship_len * 0.6)
         p2 = (ship.x - c * ship_len * 0.4 - s * ship_wid, ship.y - s * ship_len * 0.4 + c * ship_wid)
@@ -323,7 +323,7 @@ def main():
 
         # Draw yards as a line across the mast, orientation = ship heading + delta_sail
         yard_ang = ship.psi + math.radians(ship.delta_sail_deg)
-        ylen = 35
+        ylen = 17.5
         x1 = ship.x - math.cos(yard_ang) * ylen
         y1 = ship.y - math.sin(yard_ang) * ylen
         x2 = ship.x + math.cos(yard_ang) * ylen
@@ -331,7 +331,7 @@ def main():
         pygame.draw.line(screen, (210, 210, 230), (x1, y1), (x2, y2), 4)
 
         # Force vectors in body axes mapped to world frame at ship position
-        scale = 0.0012  # pixels per Newton for drawing
+        scale = 0.0006  # pixels per Newton for drawing
         # Forward (x) and starboard (y) forces to world axes
         Fx_body, Fy_body = aero.get("T", 0.0), aero.get("S", 0.0)
         Fxw = math.cos(ship.psi) * Fx_body - math.sin(ship.psi) * Fy_body
@@ -340,11 +340,13 @@ def main():
         
         # Momentum arrow (dark green) - shows ship's velocity vector
         if abs(ship.u) > 1e-6 or abs(ship.v) > 1e-6:
-            momentum_mag = math.hypot(ship.u, ship.v)
-            momentum_ang = math.degrees(math.atan2(ship.v, ship.u))
-            momentum_scale = 40.0  # pixels per m/s for drawing
-            # Reverse the angle to show where the ship is going (not where it came from)
-            draw_arrow(screen, ship.x, ship.y, momentum_ang + 180, momentum_scale * momentum_mag, DARK_GREEN, 2)
+            # Convert ship body velocities to world frame
+            uw = math.cos(ship.psi) * ship.u - math.sin(ship.psi) * ship.v
+            vw = math.sin(ship.psi) * ship.u + math.cos(ship.psi) * ship.v
+            momentum_mag = math.hypot(uw, vw)
+            momentum_ang = math.degrees(math.atan2(vw, uw))
+            momentum_scale = 20.0  # pixels per m/s for drawing
+            draw_arrow(screen, ship.x, ship.y, momentum_ang, momentum_scale * momentum_mag, DARK_GREEN, 2)
 
         # HUD
         distance_to_buoy = math.hypot(ship.x - buoy_x, ship.y - buoy_y)
