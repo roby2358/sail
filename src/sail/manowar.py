@@ -17,6 +17,8 @@ class SailForceCalculator:
         self.CL_alpha = 2.0 * math.pi * self.p.AR / (2.0 + self.p.AR)  # per rad (Helmbold approx)
         # Magnify only lift (not drag) to improve upwind drive without increasing drag
         self.lift_gain = 1.8
+        # Global sail force gain to uniformly scale aero forces (lift and drag)
+        self.force_gain = 0.5  # reduce overall sail force by half
 
     @staticmethod
     def deg2rad(deg: float) -> float:
@@ -74,6 +76,9 @@ class SailForceCalculator:
         L = q * self.p.A * CL
         L *= self.lift_gain  # apply lift-only gain
         D = q * self.p.A * CD
+        # Uniformly scale both lift and drag to reduce overall sail force
+        L *= self.force_gain
+        D *= self.force_gain
         g = math.radians(gamma_from_deg)
         # Use same decomposition as sail_forces: CL carries AoA sign already
         T = L * math.sin(g) - D * math.cos(g)
@@ -347,12 +352,15 @@ def main():
                     current_ship.delta_sail_deg = optimal_sail
         
         keys = pygame.key.get_pressed()
-        # Rudder
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        # Rudder — momentary deflection: A/D (or ←/→) deflect while held, snap to 0 when released
+        left_held = keys[pygame.K_a] or keys[pygame.K_LEFT]
+        right_held = keys[pygame.K_d] or keys[pygame.K_RIGHT]
+        if left_held and not right_held:
             current_ship.delta_rudder_deg = max(-current_ship.p.max_rudder_deg, current_ship.delta_rudder_deg - 60.0 * dt)
-        elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        elif right_held and not left_held:
             current_ship.delta_rudder_deg = min(current_ship.p.max_rudder_deg, current_ship.delta_rudder_deg + 60.0 * dt)
-        # Rudder stays where you put it (no auto-centering)
+        else:
+            current_ship.delta_rudder_deg = 0.0
 
         # Sail trim - realistic close-hauled sailing (more responsive)
         if keys[pygame.K_q]:
