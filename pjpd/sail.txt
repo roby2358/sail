@@ -1,0 +1,9 @@
+Priority:   70
+Status: ToDo
+ID: input-sep-5qq9
+Separate keyboard input handling from game logic by creating an input abstraction layer that captures key events and translates them into game commands, decoupling raw input from sailing mechanics
+---
+Priority:   70
+Status: ToDo
+ID: loop-render-q8hc
+Decouple the core game loop from rendering and display concerns by implementing a clean separation where game state updates run independently from visual presentation, allowing flexible rendering backends and consistent simulation timing
