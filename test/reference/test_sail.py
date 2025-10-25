@@ -2,15 +2,21 @@
 Unit tests for sail physics and ship dynamics.
 
 Tests cover:
-- SailForceCalculator aerodynamics
+- SailForces aerodynamics
 - Ship dynamics and integration
 - Wind calculations and force transformations
 """
 
 import math
 import pytest
-from sail.sail_forces import SailForceCalculator, SailParams
-from sail.manowar import Ship, ShipParams
+import sys
+import os
+
+# Add the src directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+from sail.reference import SailForces
+from sail.sail_params import SailParams
+from sail.ship import Ship
 
 
 class TestSailParams:
@@ -28,8 +34,8 @@ class TestSailParams:
         assert params.alpha_max_deg > params.alpha_stall_deg
 
 
-class TestSailForceCalculator:
-    """Test SailForceCalculator aerodynamics."""
+class TestSailForces:
+    """Test SailForces aerodynamics."""
     
     def setup_method(self):
         """Set up test calculator with known parameters."""
@@ -45,7 +51,7 @@ class TestSailForceCalculator:
             min_poststall_CL_frac=0.30,
             CD_surge_max=0.8
         )
-        self.calc = SailForceCalculator(self.params)
+        self.calc = SailForces(self.params)
     
     def test_deg_rad_conversion(self):
         """Test degree/radian conversion utilities."""
@@ -160,7 +166,7 @@ class TestShip:
     def setup_method(self):
         """Set up test ship with known parameters."""
         sail_params = SailParams(A=100.0)  # Smaller area for testing
-        ship_params = ShipParams(
+        ship_params = SailParams(
             mass=1000.0,  # Smaller mass for testing
             Iz=1000.0,
             sway_damp=100.0,
@@ -170,7 +176,7 @@ class TestShip:
             rudder_N_per_rad=1000.0,
             max_rudder_deg=30.0
         )
-        self.calc = SailForceCalculator(sail_params)
+        self.calc = SailForces(sail_params)
         self.ship = Ship(self.calc, ship_params)
     
     def test_initial_state(self):
@@ -273,7 +279,7 @@ class TestUtilityFunctions:
     
     def test_wrap_deg(self):
         """Test degree wrapping function."""
-        from sail.manowar import wrap_deg
+        from sail.ship import wrap_deg
         
         # Test normal angles
         assert wrap_deg(0) == 0

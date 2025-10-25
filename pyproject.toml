@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-manowar = "sail.manowar:main"
+sail-sim = "sail.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sail"]

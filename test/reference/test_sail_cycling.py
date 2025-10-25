@@ -6,8 +6,15 @@ Tests that sails cycle around continuously instead of stopping at limits.
 
 import math
 import pytest
-from sail.manowar import Ship, ShipParams
-from sail.sail_forces import SailForceCalculator, SailParams
+import sys
+import os
+
+# Add the src directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+
+from sail.ship import Ship
+from sail.reference import SailForces
+from sail.sail_params import SailParams
 
 
 class TestSailCycling:
@@ -16,7 +23,7 @@ class TestSailCycling:
     def setup_method(self):
         """Set up test ship with known parameters."""
         sail_params = SailParams(A=100.0)  # Smaller area for testing
-        ship_params = ShipParams(
+        ship_params = SailParams(
             mass=1000.0,  # Smaller mass for testing
             Iz=1000.0,
             sway_damp=100.0,
@@ -26,7 +33,7 @@ class TestSailCycling:
             rudder_N_per_rad=1000.0,
             max_rudder_deg=30.0
         )
-        self.calc = SailForceCalculator(sail_params)
+        self.calc = SailForces(sail_params)
         self.ship = Ship(self.calc, ship_params)
     
     def test_sail_cycling_q_key(self):

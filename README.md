@@ -4,7 +4,7 @@ A Python package for simulating square-rigged sailing vessels with realistic aer
 
 ## Features
 
-- **SailForceCalculator**: Aerodynamic force calculations for sails with stall modeling
+- **SailForces**: Comprehensive aerodynamic force calculations for sails with stall modeling
 - **Ship**: 2D ship dynamics simulation with realistic physics
 - **Interactive Visualization**: Pygame-based real-time sailing simulator
 - **Comprehensive Testing**: Full unit test suite for physics validation
@@ -29,10 +29,10 @@ Run the interactive sailing simulator:
 
 ```bash
 # Using uv
-uv run manowar
+uv run sail-sim
 
 # Or after installation
-manowar
+sail-sim
 ```
 
 **Controls:**
@@ -48,11 +48,15 @@ manowar
 ### Programmatic Usage
 
 ```python
-from sail import SailForceCalculator, SailParams, Ship, ShipParams
+from sail import SailForces, SailParams, Ship, SAILBOAT, MANOWAR_FULL_PRESS
 
-# Create sail calculator with custom parameters
+# Option 1: Create sail calculator with custom parameters
 params = SailParams(A=100.0, AR=3.0)  # 100 m² sail, aspect ratio 3
-calc = SailForceCalculator(params)
+calc = SailForces(params)
+
+# Option 2: Use predefined ship configurations
+sailboat_calc = SailForces(SAILBOAT)      # Modern sailboat
+manowar_calc = SailForces(MANOWAR_FULL_PRESS)  # Historical man-of-war
 
 # Calculate forces for given conditions
 Va = 15.0  # Apparent wind speed (m/s)
@@ -63,9 +67,16 @@ forces = calc.forces(Va, gamma, delta)
 print(f"Thrust: {forces['T']:.1f} N")
 print(f"Side force: {forces['S']:.1f} N")
 
-# Create ship simulation
-ship_params = ShipParams(mass=50000.0)  # 50 tonne vessel
-ship = Ship(calc, ship_params)
+# Create ship simulation using predefined configurations
+from sail import Ship, Sails, SAILBOAT, MANOWAR_FULL_PRESS
+
+# Use predefined sailboat configuration
+sailboat_sails = Sails(SAILBOAT)
+sailboat_ship = Ship(sailboat_sails)
+
+# Or use man-of-war configuration for heavier ship
+manowar_sails = Sails(MANOWAR_FULL_PRESS) 
+manowar_ship = Ship(manowar_sails)
 
 # Simulate one time step
 dt = 0.1  # 0.1 second time step
@@ -122,13 +133,20 @@ The ship model includes:
 sail/
 ├── src/sail/
 │   ├── __init__.py          # Package exports
-│   ├── sail_forces.py       # Core aerodynamics
-│   └── manowar.py          # Ship dynamics + pygame viz
+│   ├── sail_params.py       # Parameter definitions & ship configs
+│   ├── sails.py             # Game-tuned aerodynamics
+│   ├── ship.py              # Ship dynamics simulation
+│   ├── main.py              # Interactive pygame application
+│   └── reference/
+│       └── sail_forces.py   # Comprehensive aerodynamics
 ├── test/
 │   ├── __init__.py
-│   └── test_sail.py        # Comprehensive unit tests
-├── pyproject.toml          # Project configuration
-└── README.md              # This file
+│   ├── test_rudder_values.py
+│   └── reference/
+│       ├── test_sail.py     # Core physics tests
+│       └── ...              # Additional reference tests
+├── pyproject.toml           # Project configuration
+└── README.md               # This file
 ```
 
 ## Development

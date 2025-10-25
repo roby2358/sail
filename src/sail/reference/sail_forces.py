@@ -3,71 +3,10 @@ try:
     import pandas as pd  # optional; only needed for sweep/optimize helpers
 except Exception:  # pragma: no cover - optional dependency
     pd = None
-from dataclasses import dataclass
 from typing import Dict, Tuple
+from sail.sail_params import SailParams
 
-@dataclass
-class SailParams:
-    # Geometry & air
-    rho: float = 1.225         # kg/m^3
-    A: float = 25.0            # m^2 (reduced sail area for more manageable power)
-    AR: float = 6.0            # aspect ratio (higher for better efficiency)
-    e: float = 0.90            # Oswald efficiency factor (higher for better performance)
-
-    # Polar / section
-    CD0: float = 0.008         # zero-lift (parasitic) drag (lower for better performance)
-    alpha0_deg: float = -3.0   # zero-lift AoA (deg) (better for upwind)
-
-    # Stall model
-    alpha_stall_deg: float = 18.0  # onset of stall (deg) (later stall for better upwind)
-    alpha_max_deg: float = 45.0    # fully separated (deg) (more forgiving)
-    min_poststall_CL_frac: float = 0.40  # CL fraction retained far past stall (better post-stall)
-    CD_surge_max: float = 0.6      # extra CD added at alpha_max (less drag surge)
-    
-    # Ship dynamics
-    mass: float = 500.0        # kg (ship mass)
-    Iz: float = 5000.0         # yaw inertia kg·m^2
-    sway_damp: float = 10000.0 # N·(m/s) for lateral velocity
-    surge_damp: float = 800.0 # N·(m/s) for forward velocity (reduced for more momentum persistence)
-    yaw_damp: float = 50000.0  # N·m per rad/s (reduced to restore rudder authority)
-    lever_S: float = 1.0       # m: side-force lever arm creating yaw
-    rudder_N_per_rad: float = 300000.0   # N·m per rad rudder effectiveness (boosted for better turning)
-    max_rudder_deg: float = 35.0  # Full rudder range
-    ship_type: str = "sailboat"  # Ship type for visualization
-
-# Man o' War — Full Press (all plain sail, fair wind, reaching/running bias)
-# SailParams(
-#     rho=1.225,            # sea-level standard; 1.20–1.25 covers warm/cool marine air
-#     A=3800.0,             # m^2 effective projected area (≈ 0.7–0.8 of ~5000–5500 m^2 total canvas)
-#     AR=1.6,               # low aspect ratio for stacked square sails
-#     e=0.65,               # Oswald efficiency knocked down by mast/yard losses & interference
-#
-#     CD0=0.055,            # hull + rigging windage baked into the polar
-#     alpha0_deg=+0.5,      # square canvas doesn’t make lift at tiny α like a foil
-#
-#     alpha_stall_deg=12.0, # stalls early when pinching
-#     alpha_max_deg=65.0,   # but stays “parachute-useful” far past stall
-#     min_poststall_CL_frac=0.20,
-#     CD_surge_max=1.35     # strong drag rise when squared off — downwind is drag-driven
-# )
-
-# Man o' War — Battle Sails (reefed/shortened sail, closer to weather, less showy)
-# SailParams(
-#     rho=1.225,
-#     A=2200.0,             # reduced effective area for topsails/fore-and-main only
-#     AR=1.4,               # slightly “stubbier” with less aloft
-#     e=0.58,               # more interference and leakage when canvas is cut down
-#
-#     CD0=0.060,            # proportionally more parasitic drag (rigging dominates)
-#     alpha0_deg=+0.5,
-#
-#     alpha_stall_deg=10.0, # earlier stall reflects poor upwind bite
-#     alpha_max_deg=60.0,
-#     min_poststall_CL_frac=0.18,
-#     CD_surge_max=1.25
-# )
-
-class SailForceCalculator:
+class SailForces:
     def __init__(self, params: SailParams = SailParams()):
         self.p = params
 
@@ -221,7 +160,7 @@ class SailForceCalculator:
         return out
 
 if __name__ == "__main__":
-    calc = SailForceCalculator()
+    calc = SailForces()
 
     # Example: true wind 10 m/s from 45° off the bow, boat at 5 m/s forward
     Va, gamma = calc.apparent_wind(VT=10.0, beta_deg=45.0, U_boat=5.0)

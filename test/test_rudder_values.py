@@ -12,7 +12,7 @@ import os
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'sail'))
 
-from sail_forces import SailParams
+from sail.sail_params import SailParams
 
 
 class TestRudderValues(unittest.TestCase):

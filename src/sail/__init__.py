@@ -2,13 +2,23 @@
 Sail - Square-rigged vessel simulation and sail force calculations.
 
 This package provides:
-- SailForceCalculator: Aerodynamic force calculations for sails
+- SailForces: Comprehensive aerodynamic force calculations for analysis/research
+- Sails: Game-tuned aerodynamic calculations for interactive simulation
 - Ship: 2D ship dynamics simulation
-- Interactive pygame visualization for sailing simulation
+- SailParams: Parameter definitions and predefined ship configurations
+- Interactive pygame visualization (main.py entry point)
+
+Predefined ship configurations:
+- SAILBOAT: Modern sailboat (50m² sail, 500kg mass)
+- MANOWAR_FULL_PRESS: Man-of-war with full sails (800m² sail, 175t mass)
+- MANOWAR_BATTLE_SAILS: Man-of-war with battle sails (500m² sail, 175t mass)
 """
 
-from .sail_forces import SailForceCalculator, SailParams
-from .manowar import Ship
+from .reference import SailForces
+from .sails import Sails
+from .sail_params import SailParams, SAILBOAT, MANOWAR_FULL_PRESS, MANOWAR_BATTLE_SAILS
+from .ship import Ship
+
+__all__ = ["SailForces", "Sails", "SailParams", "Ship", "SAILBOAT", "MANOWAR_FULL_PRESS", "MANOWAR_BATTLE_SAILS"]
 
 __version__ = "0.1.0"
-__all__ = ["SailForceCalculator", "SailParams", "Ship"]

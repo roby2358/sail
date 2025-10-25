@@ -12,9 +12,10 @@ import sys
 import os
 
 # Add the src directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from sail.sail_forces import SailForceCalculator, SailParams
+from sail.reference import SailForces
+from sail.sail_params import SailParams
 
 
 class TestSailForceDirection(unittest.TestCase):
@@ -22,7 +23,7 @@ class TestSailForceDirection(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.calc = SailForceCalculator()
+        self.calc = SailForces()
     
     def test_port_tack_can_generate_starboard_force(self):
         """Test that wind from port can generate starboard force with proper trim."""
