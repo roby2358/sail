@@ -34,6 +34,82 @@ def draw_arrow(surf, x, y, ang_deg, length, color, width=2):
     pygame.draw.polygon(surf, color, [(x2, y2), left, right])
 
 
+def draw_main_sail(screen, ship_x, ship_y, ship_heading_psi, sail_trim_deg, color):
+    """Draw main sail as a line from mast to sail end position.
+    
+    Args:
+        screen: pygame surface to draw on
+        ship_x, ship_y: ship position in world coordinates
+        ship_heading_psi: ship heading angle in radians
+        sail_trim_deg: sail trim angle in degrees
+        color: color tuple for the sail line
+    """
+    if screen is None:
+        return
+    if not (-180 <= sail_trim_deg <= 180):
+        return
+        
+    sail_ang = math.radians(sail_trim_deg)
+    sail_len = 20
+    
+    # Mast position in ship body coordinates (4 units forward from center)
+    mast_x_body = 4
+    mast_y_body = 0
+    
+    # Ship heading cosine and sine for coordinate transformation
+    c, s = math.cos(ship_heading_psi), math.sin(ship_heading_psi)
+    
+    # Convert mast position to world coordinates
+    sx1 = ship_x + c * mast_x_body - s * mast_y_body
+    sy1 = ship_y + s * mast_x_body + c * mast_y_body
+    
+    # Sail end position in ship body coordinates  
+    sail_x_body = -math.cos(sail_ang) * sail_len  # Negative for port/starboard mirroring
+    sail_y_body = math.sin(sail_ang) * sail_len
+    
+    # Convert sail end to world coordinates
+    sx2 = ship_x + c * sail_x_body - s * sail_y_body
+    sy2 = ship_y + s * sail_x_body + c * sail_y_body
+    
+    pygame.draw.line(screen, color, (sx1, sy1), (sx2, sy2), 3)
+
+
+def draw_yards(screen, ship_x, ship_y, ship_heading_psi, sail_trim_deg, color):
+    """Draw yards as horizontal line across the mast for man-of-war ships.
+    
+    Args:
+        screen: pygame surface to draw on
+        ship_x, ship_y: ship position in world coordinates
+        ship_heading_psi: ship heading angle in radians
+        sail_trim_deg: sail trim angle in degrees
+        color: color tuple for the yards line
+    """
+    if screen is None:
+        return
+    if not (-180 <= sail_trim_deg <= 180):
+        return
+        
+    yard_ang = math.radians(sail_trim_deg)
+    ylen = 17.5
+    
+    # Ship heading cosine and sine for coordinate transformation
+    c, s = math.cos(ship_heading_psi), math.sin(ship_heading_psi)
+    
+    # Yard end positions in ship body coordinates
+    yard1_x_body = math.cos(yard_ang) * ylen  # Positive for port/starboard mirroring
+    yard1_y_body = -math.sin(yard_ang) * ylen
+    yard2_x_body = -math.cos(yard_ang) * ylen  # Negative for port/starboard mirroring
+    yard2_y_body = math.sin(yard_ang) * ylen
+    
+    # Convert to world coordinates
+    x1 = ship_x + c * yard1_x_body - s * yard1_y_body
+    y1 = ship_y + s * yard1_x_body + c * yard1_y_body
+    x2 = ship_x + c * yard2_x_body - s * yard2_y_body
+    y2 = ship_y + s * yard2_x_body + c * yard2_y_body
+    
+    pygame.draw.line(screen, color, (x1, y1), (x2, y2), 4)
+
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -181,37 +257,9 @@ def main():
 
         # Draw sails - different for sailboat vs man-of-war
         if current_ship.p.ship_type == "sailboat":
-            # Draw main sail as a simple white line - in ship body coordinates
-            sail_ang = math.radians(current_ship.delta_sail_deg)  # Only use sail trim angle
-            sail_len = 20
-            # Mast position in ship body coordinates (4 units forward from center)
-            mast_x_body = 4
-            mast_y_body = 0
-            # Convert mast position to world coordinates
-            sx1 = current_ship.x + c * mast_x_body - s * mast_y_body
-            sy1 = current_ship.y + s * mast_x_body + c * mast_y_body
-            # Sail end position in ship body coordinates
-            sail_x_body = -math.cos(sail_ang) * sail_len  # Negative for port/starboard mirroring
-            sail_y_body = math.sin(sail_ang) * sail_len
-            # Convert sail end to world coordinates
-            sx2 = current_ship.x + c * sail_x_body - s * sail_y_body
-            sy2 = current_ship.y + s * sail_x_body + c * sail_y_body
-            pygame.draw.line(screen, WHITE, (sx1, sy1), (sx2, sy2), 3)
+            draw_main_sail(screen, current_ship.x, current_ship.y, current_ship.psi, current_ship.delta_sail_deg, WHITE)
         else:
-            # Draw yards as a line across the mast (man-of-war) - in ship body coordinates
-            yard_ang = math.radians(current_ship.delta_sail_deg)  # Only use sail trim angle
-            ylen = 17.5
-            # Yard end positions in ship body coordinates
-            yard1_x_body = math.cos(yard_ang) * ylen  # Positive for port/starboard mirroring
-            yard1_y_body = -math.sin(yard_ang) * ylen
-            yard2_x_body = -math.cos(yard_ang) * ylen  # Negative for port/starboard mirroring
-            yard2_y_body = math.sin(yard_ang) * ylen
-            # Convert to world coordinates
-            x1 = current_ship.x + c * yard1_x_body - s * yard1_y_body
-            y1 = current_ship.y + s * yard1_x_body + c * yard1_y_body
-            x2 = current_ship.x + c * yard2_x_body - s * yard2_y_body
-            y2 = current_ship.y + s * yard2_x_body + c * yard2_y_body
-            pygame.draw.line(screen, (210, 210, 230), (x1, y1), (x2, y2), 4)
+            draw_yards(screen, current_ship.x, current_ship.y, current_ship.psi, current_ship.delta_sail_deg, (210, 210, 230))
 
         # Force vectors in body axes mapped to world frame at ship position
         scale = 0.0006  # pixels per Newton for drawing
