@@ -8,7 +8,7 @@ This package provides:
 """
 
 from .sail_forces import SailForceCalculator, SailParams
-from .manowar import Ship, ShipParams
+from .manowar import Ship
 
 __version__ = "0.1.0"
-__all__ = ["SailForceCalculator", "SailParams", "Ship", "ShipParams"]
+__all__ = ["SailForceCalculator", "SailParams", "Ship"]

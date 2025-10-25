@@ -10,19 +10,30 @@ from typing import Dict, Tuple
 class SailParams:
     # Geometry & air
     rho: float = 1.225         # kg/m^3
-    A: float = 20.0            # m^2 (reference area)
-    AR: float = 4.5            # aspect ratio (span^2 / area), rough for a main+jib effective
-    e: float = 0.85            # Oswald efficiency factor
+    A: float = 25.0            # m^2 (reduced sail area for more manageable power)
+    AR: float = 6.0            # aspect ratio (higher for better efficiency)
+    e: float = 0.90            # Oswald efficiency factor (higher for better performance)
 
     # Polar / section
-    CD0: float = 0.015         # zero-lift (parasitic) drag
-    alpha0_deg: float = -2.0   # zero-lift AoA (deg)
+    CD0: float = 0.008         # zero-lift (parasitic) drag (lower for better performance)
+    alpha0_deg: float = -3.0   # zero-lift AoA (deg) (better for upwind)
 
     # Stall model
-    alpha_stall_deg: float = 15.0  # onset of stall (deg)
-    alpha_max_deg: float = 35.0    # fully separated (deg) where model caps out
-    min_poststall_CL_frac: float = 0.30  # CL fraction retained far past stall
-    CD_surge_max: float = 0.8      # extra CD added at alpha_max
+    alpha_stall_deg: float = 18.0  # onset of stall (deg) (later stall for better upwind)
+    alpha_max_deg: float = 45.0    # fully separated (deg) (more forgiving)
+    min_poststall_CL_frac: float = 0.40  # CL fraction retained far past stall (better post-stall)
+    CD_surge_max: float = 0.6      # extra CD added at alpha_max (less drag surge)
+    
+    # Ship dynamics
+    mass: float = 500.0        # kg (ship mass)
+    Iz: float = 5000.0         # yaw inertia kg·m^2
+    sway_damp: float = 10000.0 # N·(m/s) for lateral velocity
+    surge_damp: float = 800.0 # N·(m/s) for forward velocity (reduced for more momentum persistence)
+    yaw_damp: float = 50000.0  # N·m per rad/s (reduced to restore rudder authority)
+    lever_S: float = 1.0       # m: side-force lever arm creating yaw
+    rudder_N_per_rad: float = 300000.0   # N·m per rad rudder effectiveness (boosted for better turning)
+    max_rudder_deg: float = 35.0  # Full rudder range
+    ship_type: str = "sailboat"  # Ship type for visualization
 
 # Man o' War — Full Press (all plain sail, fair wind, reaching/running bias)
 # SailParams(

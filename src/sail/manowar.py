@@ -2,27 +2,12 @@ import math
 import pygame
 from dataclasses import dataclass
 from typing import Dict, Tuple
+from sail.sail_forces import SailParams
 
 # -----------------------------
 # Aero model (single equivalent "wing")
 # -----------------------------
-@dataclass
-class SailParams:
-    # Geometry & air
-    rho: float = 1.225         # kg/m^3
-    A: float = 1900.0          # m^2 effective projected area (Full Press default)
-    AR: float = 3.0            # aspect ratio (span^2 / area) - higher for better lift
-    e: float = 0.75            # Oswald efficiency factor - higher for better performance
-
-    # Polar / section
-    CD0: float = 0.030         # zero-lift (parasitic) drag (rigging + hull windage baked in)
-    alpha0_deg: float = -1.0   # zero-lift AoA (deg) - negative for better upwind
-
-    # Stall model
-    alpha_stall_deg: float = 12.0  # onset of stall (deg)
-    alpha_max_deg: float = 65.0    # fully separated (deg)
-    min_poststall_CL_frac: float = 0.20  # CL fraction retained far past stall
-    CD_surge_max: float = 1.35      # extra CD added at alpha_max
+# SailParams is now imported from sail_forces.py
 
 
 class SailForceCalculator:
@@ -30,6 +15,8 @@ class SailForceCalculator:
         self.p = params
         self.k = 1.0 / (math.pi * self.p.e * self.p.AR)  # induced-drag factor
         self.CL_alpha = 2.0 * math.pi * self.p.AR / (2.0 + self.p.AR)  # per rad (Helmbold approx)
+        # Magnify only lift (not drag) to improve upwind drive without increasing drag
+        self.lift_gain = 1.8
 
     @staticmethod
     def deg2rad(deg: float) -> float:
@@ -85,6 +72,7 @@ class SailForceCalculator:
         CD = self.cd(CL, alpha_deg)
         q = 0.5 * self.p.rho * Va * Va
         L = q * self.p.A * CL
+        L *= self.lift_gain  # apply lift-only gain
         D = q * self.p.A * CD
         g = math.radians(gamma_from_deg)
         # Use same decomposition as sail_forces: CL carries AoA sign already
@@ -96,34 +84,13 @@ class SailForceCalculator:
 # -----------------------------
 # Toy ship dynamics (2D top-down)
 # -----------------------------
-@dataclass
-class ShipParams:
-    mass: float = 175000.0     # kg (ballpark for a 1st rate fully loaded)
-    Iz: float = 6.0e6          # yaw inertia kg·m^2 (very rough)
-    sway_damp: float = 2.0e5   # N·(m/s) for lateral velocity
-    surge_damp: float = 6.0e4  # N·(m/s) for forward velocity
-    yaw_damp: float = 4.0e7    # N·m per rad/s
-    lever_S: float = 4.0       # m: side-force lever arm creating yaw
-    rudder_N_per_rad: float = 1.2e8  # N·m per rad rudder effectiveness
-    max_rudder_deg: float = 35.0
-
-# Modern sailboat parameters - balanced for good movement
-@dataclass
-class SailboatParams:
-    mass: float = 500.0        # kg (lighter for better acceleration)
-    Iz: float = 5000.0         # yaw inertia kg·m^2 (reduced for responsiveness)
-    sway_damp: float = 10000.0 # N·(m/s) for lateral velocity (moderate keel)
-    surge_damp: float = 2000.0 # N·(m/s) for forward velocity (much less damping)
-    yaw_damp: float = 5000.0   # N·m per rad/s (reduced for responsiveness)
-    lever_S: float = 1.0       # m: moderate lever arm
-    rudder_N_per_rad: float = 150000.0  # N·m per rad rudder effectiveness (good control)
-    max_rudder_deg: float = 35.0  # Full rudder range for good steering
+# Ship dynamics parameters are now part of SailParams
 
 
 class Ship:
-    def __init__(self, sail_calc: SailForceCalculator, ship_params: ShipParams = ShipParams()):
+    def __init__(self, sail_calc: SailForceCalculator):
         self.sc = sail_calc
-        self.p = ship_params
+        self.p = sail_calc.p  # Use the same params from the sail calculator
         # World state (meters, radians)
         self.x = 400.0
         self.y = 300.0
@@ -152,7 +119,21 @@ class Ship:
 
         # Rudder yaw moment and side-force lever arm yaw
         delta_r = math.radians(max(-self.p.max_rudder_deg, min(self.p.max_rudder_deg, self.delta_rudder_deg)))
-        N = self.p.lever_S * S + self.p.rudder_N_per_rad * delta_r - self.p.yaw_damp * self.r
+        
+        # Speed-dependent rudder effectiveness based on water speed (|velocity|)^2
+        # Use combined body speed so rudder stays effective when there is sway as well as surge
+        reference_speed = 3.0  # m/s reference speed for nominal rudder effectiveness
+        boat_speed = math.hypot(self.u, self.v)
+        speed_factor = max(0.1, min(3.0, (boat_speed * boat_speed) / (reference_speed * reference_speed)))
+        rudder_force = self.p.rudder_N_per_rad * delta_r * speed_factor
+
+        # Keel-like yaw damping grows with water speed to prevent spinning in place
+        # Stronger keel damping at high speeds: cubic growth with a higher cap
+        keel_ratio = (boat_speed / reference_speed)
+        keel_damp_factor = min(10.0, max(0.0, keel_ratio ** 3))
+        yaw_damp_eff = self.p.yaw_damp * (1.0 + keel_damp_factor)
+
+        N = self.p.lever_S * S + rudder_force - yaw_damp_eff * self.r
 
         # Integrate body velocities
         ax = Fx / self.p.mass
@@ -242,14 +223,9 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("consolas", 18)
 
-    params_full = SailParams()
-    params_battle = SailParams(A=1100.0, AR=2.5, e=0.70, CD0=0.035,
-                               alpha_stall_deg=10.0, alpha_max_deg=60.0,
-                               min_poststall_CL_frac=0.18, CD_surge_max=1.25)
-    
-    # Modern sailboat - much better upwind performance
+    # Sailboat configuration (default)
     params_sailboat = SailParams(
-        A=200.0,             # m^2 (much larger sail area for more power)
+        A=50.0,              # m^2 (reduced sail area for more manageable power)
         AR=6.0,              # High aspect ratio for efficiency
         e=0.90,              # Excellent efficiency with slot effect
         CD0=0.008,           # Very low parasitic drag
@@ -257,22 +233,69 @@ def main():
         alpha_stall_deg=18.0, # Later stall for better upwind performance
         alpha_max_deg=45.0,   # More forgiving stall characteristics
         min_poststall_CL_frac=0.40,  # Better post-stall performance
-        CD_surge_max=0.6     # Less drag surge when overtrimmed
+        CD_surge_max=0.6,    # Less drag surge when overtrimmed
+        ship_type="sailboat"  # Ship type
+    )
+    
+    # Man-of-war full press configuration
+    params_manowar_full = SailParams(
+        A=800.0,             # m^2 effective projected area (reduced for more manageable power)
+        AR=3.5,              # aspect ratio (slightly higher)
+        e=0.80,              # Oswald efficiency factor (improved)
+        CD0=0.025,           # zero-lift drag (reduced)
+        alpha0_deg=-2.0,     # zero-lift AoA (better for upwind)
+        alpha_stall_deg=15.0, # onset of stall (later stall)
+        alpha_max_deg=60.0,   # fully separated (more forgiving)
+        min_poststall_CL_frac=0.30,  # CL fraction retained (better post-stall)
+        CD_surge_max=1.20,   # extra CD added (reduced drag surge)
+        # Ship dynamics for man-of-war
+        mass=175000.0,       # kg (ballpark for a 1st rate fully loaded)
+        Iz=6.0e6,            # yaw inertia kg·m^2
+        sway_damp=2.0e5,     # N·(m/s) for lateral velocity
+        surge_damp=6.0e4,    # N·(m/s) for forward velocity
+        yaw_damp=2.0e8,      # N·m per rad/s (increased significantly)
+        lever_S=4.0,         # m: side-force lever arm
+        rudder_N_per_rad=6.0e7,  # N·m per rad rudder effectiveness (restored to reasonable level)
+        max_rudder_deg=35.0, # Full rudder range
+        ship_type="manowar"  # Ship type
+    )
+    
+    # Man-of-war battle sails configuration
+    params_manowar_battle = SailParams(
+        A=500.0,             # m^2 reduced effective area (reduced for more manageable power)
+        AR=3.0,              # slightly higher aspect ratio
+        e=0.75,              # improved efficiency
+        CD0=0.030,           # reduced parasitic drag
+        alpha0_deg=-2.0,     # zero-lift AoA (better for upwind)
+        alpha_stall_deg=12.0, # onset of stall (later than before)
+        alpha_max_deg=55.0,   # fully separated (more forgiving)
+        min_poststall_CL_frac=0.25,  # CL fraction retained (better post-stall)
+        CD_surge_max=1.10,   # extra CD added (reduced drag surge)
+        # Ship dynamics for man-of-war (same as full press)
+        mass=175000.0,       # kg
+        Iz=6.0e6,            # yaw inertia kg·m^2
+        sway_damp=2.0e5,     # N·(m/s) for lateral velocity
+        surge_damp=6.0e4,    # N·(m/s) for forward velocity
+        yaw_damp=2.0e8,      # N·m per rad/s (increased significantly)
+        lever_S=4.0,         # m: side-force lever arm
+        rudder_N_per_rad=6.0e7,  # N·m per rad rudder effectiveness (restored to reasonable level)
+        max_rudder_deg=35.0, # Full rudder range
+        ship_type="battle"   # Ship type
     )
 
-    # Create sailboat with modern parameters (default)
-    sailboat_calc = SailForceCalculator(params_sailboat)
-    sailboat = Ship(sailboat_calc, SailboatParams())
+    # Create current ship (sailboat by default)
+    current_ship = Ship(SailForceCalculator(params_sailboat))
     
-    # Create man-of-war ships
-    calc = SailForceCalculator(params_full)
-    ship = Ship(calc)
-    
-    using_sailboat = True  # Start with sailboat as default
+    # Store ship configurations for switching
+    ship_configs = {
+        "sailboat": SailForceCalculator(params_sailboat),
+        "manowar_full": SailForceCalculator(params_manowar_full),
+        "manowar_battle": SailForceCalculator(params_manowar_battle)
+    }
 
     # Environment — fix wind FROM due East (0°) permanently
     wind_from_global_deg = 0.0  # FROM angle in world frame (0° = East)
-    VT = 5.0  # m/s (reduced wind speed for better control)
+    VT = 8.0  # m/s (increased wind speed for better upwind performance)
 
     # Destination buoy
     import random
@@ -283,7 +306,6 @@ def main():
     buoy_captures = 0
 
     paused = False
-    using_battle = False
 
     while True:
         dt = clock.tick(60) / 1000.0
@@ -297,47 +319,49 @@ def main():
                 if e.key == pygame.K_SPACE:
                     paused = not paused
                 if e.key == pygame.K_r:
-                    ship.__init__(calc)  # reset
+                    # Reset current ship
+                    calc = ship_configs[current_ship.p.ship_type]
+                    current_ship.__init__(calc)
                 if e.key == pygame.K_RETURN:
                     current_ship.x = WIDTH // 2
                     current_ship.y = HEIGHT // 2
+                if e.key == pygame.K_s:
+                    # Instantly center the rudder
+                    current_ship.delta_rudder_deg = 0.0
                 if e.key == pygame.K_t:
                     # Move buoy to new random location
                     buoy_x = random.randint(100, WIDTH - 100)
                     buoy_y = random.randint(100, HEIGHT - 100)
                 if e.key == pygame.K_1:
-                    using_sailboat = True; using_battle = False
+                    # Switch to sailboat
+                    current_ship = Ship(ship_configs["sailboat"])
                 if e.key == pygame.K_2:
-                    calc.p = params_full; calc.__init__(calc.p); using_battle = False; using_sailboat = False
+                    # Switch to man-of-war (full press)
+                    current_ship = Ship(ship_configs["manowar_full"])
                 if e.key == pygame.K_3:
-                    calc.p = params_battle; calc.__init__(calc.p); using_battle = True; using_sailboat = False
+                    # Switch to man-of-war (battle sails)
+                    current_ship = Ship(ship_configs["manowar_battle"])
                 if e.key == pygame.K_o:
                     # Optimize sail for close-hauled sailing
-                    current_ship = sailboat if using_sailboat else ship
                     optimal_sail = current_ship.optimize_sail_for_close_hauled(VT, wind_from_global_deg)
                     current_ship.delta_sail_deg = optimal_sail
-
-        # Select current ship
-        current_ship = sailboat if using_sailboat else ship
         
         keys = pygame.key.get_pressed()
         # Rudder
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            current_ship.delta_rudder_deg = max(-current_ship.p.max_rudder_deg, current_ship.delta_rudder_deg - 40.0 * dt)
+            current_ship.delta_rudder_deg = max(-current_ship.p.max_rudder_deg, current_ship.delta_rudder_deg - 60.0 * dt)
         elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            current_ship.delta_rudder_deg = min(current_ship.p.max_rudder_deg, current_ship.delta_rudder_deg + 40.0 * dt)
-        else:
-            # Very gradual auto-center rudder
-            current_ship.delta_rudder_deg *= (1.0 - min(1.0, 0.5 * dt))
+            current_ship.delta_rudder_deg = min(current_ship.p.max_rudder_deg, current_ship.delta_rudder_deg + 60.0 * dt)
+        # Rudder stays where you put it (no auto-centering)
 
         # Sail trim - realistic close-hauled sailing (more responsive)
         if keys[pygame.K_q]:
-            current_ship.delta_sail_deg -= 60.0 * dt  # Doubled responsiveness
+            current_ship.delta_sail_deg -= 120.0 * dt  # Faster trim response
             # Limit to realistic close-hauled range for upwind sailing
             if current_ship.delta_sail_deg < -60.0:
                 current_ship.delta_sail_deg = -60.0
         if keys[pygame.K_e]:
-            current_ship.delta_sail_deg += 60.0 * dt  # Doubled responsiveness
+            current_ship.delta_sail_deg += 120.0 * dt  # Faster trim response
             # Limit to realistic close-hauled range for upwind sailing
             if current_ship.delta_sail_deg > 60.0:
                 current_ship.delta_sail_deg = 60.0
@@ -378,8 +402,8 @@ def main():
         # Draw capture zone (dashed circle)
         pygame.draw.circle(screen, (255, 255, 255, 100), (int(buoy_x), int(buoy_y)), buoy_capture_distance, 2)
         
-        # Draw ship (triangle) - different size for sailboat
-        if using_sailboat:
+        # Draw ship (triangle) - different size based on ship type
+        if current_ship.p.ship_type == "sailboat":
             ship_len = 25  # Much bigger for sailboat visibility
             ship_wid = 8
             ship_color = (120, 200, 255)  # Light blue for sailboat
@@ -395,23 +419,37 @@ def main():
         pygame.draw.polygon(screen, ship_color, [p1, p2, p3])
 
         # Draw sails - different for sailboat vs man-of-war
-        if using_sailboat:
-            # Draw main sail as a simple white line
-            sail_ang = current_ship.psi + math.radians(current_ship.delta_sail_deg) + math.pi  # Add 180° to reverse
+        if current_ship.p.ship_type == "sailboat":
+            # Draw main sail as a simple white line - in ship body coordinates
+            sail_ang = math.radians(current_ship.delta_sail_deg)  # Only use sail trim angle
             sail_len = 20
-            sx1 = current_ship.x + c * 4  # Mast position
-            sy1 = current_ship.y + s * 4
-            sx2 = sx1 + math.cos(sail_ang) * sail_len
-            sy2 = sy1 + math.sin(sail_ang) * sail_len
+            # Mast position in ship body coordinates (4 units forward from center)
+            mast_x_body = 4
+            mast_y_body = 0
+            # Convert mast position to world coordinates
+            sx1 = current_ship.x + c * mast_x_body - s * mast_y_body
+            sy1 = current_ship.y + s * mast_x_body + c * mast_y_body
+            # Sail end position in ship body coordinates
+            sail_x_body = -math.cos(sail_ang) * sail_len  # Negative for port/starboard mirroring
+            sail_y_body = math.sin(sail_ang) * sail_len
+            # Convert sail end to world coordinates
+            sx2 = current_ship.x + c * sail_x_body - s * sail_y_body
+            sy2 = current_ship.y + s * sail_x_body + c * sail_y_body
             pygame.draw.line(screen, WHITE, (sx1, sy1), (sx2, sy2), 3)
         else:
-            # Draw yards as a line across the mast (man-of-war)
-            yard_ang = current_ship.psi + math.radians(current_ship.delta_sail_deg)
+            # Draw yards as a line across the mast (man-of-war) - in ship body coordinates
+            yard_ang = math.radians(current_ship.delta_sail_deg)  # Only use sail trim angle
             ylen = 17.5
-            x1 = current_ship.x - math.cos(yard_ang) * ylen
-            y1 = current_ship.y - math.sin(yard_ang) * ylen
-            x2 = current_ship.x + math.cos(yard_ang) * ylen
-            y2 = current_ship.y + math.sin(yard_ang) * ylen
+            # Yard end positions in ship body coordinates
+            yard1_x_body = math.cos(yard_ang) * ylen  # Positive for port/starboard mirroring
+            yard1_y_body = -math.sin(yard_ang) * ylen
+            yard2_x_body = -math.cos(yard_ang) * ylen  # Negative for port/starboard mirroring
+            yard2_y_body = math.sin(yard_ang) * ylen
+            # Convert to world coordinates
+            x1 = current_ship.x + c * yard1_x_body - s * yard1_y_body
+            y1 = current_ship.y + s * yard1_x_body + c * yard1_y_body
+            x2 = current_ship.x + c * yard2_x_body - s * yard2_y_body
+            y2 = current_ship.y + s * yard2_x_body + c * yard2_y_body
             pygame.draw.line(screen, (210, 210, 230), (x1, y1), (x2, y2), 4)
 
         # Force vectors in body axes mapped to world frame at ship position
@@ -434,17 +472,22 @@ def main():
 
         # HUD
         distance_to_buoy = math.hypot(current_ship.x - buoy_x, current_ship.y - buoy_y)
-        ship_type = "Sailboat" if using_sailboat else ("Battle Sails" if using_battle else "Full Press")
+        ship_type_display = {
+            "sailboat": "Sailboat",
+            "manowar": "Full Press", 
+            "battle": "Battle Sails"
+        }.get(current_ship.p.ship_type, "Unknown")
         lines = [
-            f"Ship: {ship_type} (1/2/3 to toggle) |  Mass: {current_ship.p.mass/1000:.0f}k kg",
+            f"Ship: {ship_type_display} (1/2/3 to toggle) |  Mass: {current_ship.p.mass/1000:.0f}k kg",
             f"Wind FROM: {wind_from_global_deg:5.1f}°  |  VT: {VT:4.1f} m/s",
             f"Heading: {math.degrees(current_ship.psi)%360:5.1f}°  Speed u: {current_ship.u:5.2f} m/s  v: {current_ship.v:5.2f} m/s",
             f"Sail δ: {current_ship.delta_sail_deg:5.1f}°   Rudder: {current_ship.delta_rudder_deg:5.1f}°",
             f"Va: {Va:5.2f} m/s   γ_app FROM: {gamma:5.1f}°   α: {aero.get('alpha_deg',0):5.1f}°",
             f"T: {aero.get('T',0):8.0f} N   S: {aero.get('S',0):8.0f} N   L: {aero.get('L',0):8.0f} N   D: {aero.get('D',0):8.0f} N",
             f"Rudder: {current_ship.delta_rudder_deg:5.1f}°  Yaw rate: {current_ship.r:6.3f} rad/s  Heading: {math.degrees(current_ship.psi):6.1f}°",
+            f"Speed factor: {max(0.1, min(3.0, (math.hypot(current_ship.u, current_ship.v)**2) / 9.0)):.2f}  Rudder force: {current_ship.p.rudder_N_per_rad * math.radians(current_ship.delta_rudder_deg) * max(0.1, min(3.0, (math.hypot(current_ship.u, current_ship.v)**2) / 9.0)):.0f} N",
             f"Distance to buoy: {distance_to_buoy:5.1f} pixels  |  Capture: {buoy_capture_distance} pixels  |  Captures: {buoy_captures}",
-            "Controls — A/D or ←/→: rudder  |  Q/E: trim  |  X: wind speed+  |  Z/C: wind dir −/+  |  SPACE: pause  |  R: reset  |  T: move buoy  |  O: optimize sail",
+            "Controls — A/D or ←/→: rudder  |  S: center rudder  |  Q/E: trim  |  X: wind speed+  |  Z/C: wind dir −/+  |  SPACE: pause  |  R: reset  |  T: move buoy  |  O: optimize sail",
             "Tacking: Sail at 45-60° to wind, trim sails (Q/E) for close-hauled sailing, use rudder to zigzag upwind"
         ]
         for i, txt in enumerate(lines):
